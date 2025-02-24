@@ -1,7 +1,10 @@
 library(tidyverse)
 library(shiny)
 library(DT)
+library(leaflet)
 library(bslib) #fonts
+library(here)
+library(sf)
 
 
 #do data cleaning and r stuff above here
@@ -14,6 +17,10 @@ my_theme <- bs_theme(bootswatch = 'vapor') %>%
                   heading_font = font_google('Montsterrat Alternatives'), 
                   font_scale = 1.3)
 
+santa_barbara_geo <- read_sf(here("data", "ca_counties", "CA_Counties_TIGER2016.shp")) |> 
+  filter(NAME == "Santa Barbara") |> 
+  st_transform(4326)
+
 ### create the userinterface
 
 ui <- fluidPage(
@@ -23,7 +30,10 @@ ui <- fluidPage(
   
   sidebarLayout(
     sidebarPanel(
+      
       h3("Widgets"),
+      
+      checkboxInput("show_labels", "Show City Labels", value = TRUE),
       
       textInput("text", label = h4("Search Bird Species"), value = "Enter text..."),
       
@@ -78,6 +88,14 @@ ui <- fluidPage(
              to explore the dataset.")
         ),
         
+        
+        #map
+        tabPanel("Map",
+                 h2("Map of Santa Barbara County"),
+                 p("Explore the regions of Santa Barbara County by interacting with the map below."),
+                 leafletOutput("sb_map", height = "800px")
+        ),
+        
         # Visualization Tab
         tabPanel("Visualization",
                  h2("Bird Observations Over Time"),
@@ -94,9 +112,49 @@ ui <- fluidPage(
   )
 )
 
+
 ### create the server function
 
 server <- function(input, output) {
+  
+  
+  output$sb_map <- renderLeaflet({
+    leaflet(data = santa_barbara_geo) %>%
+      addProviderTiles(providers$Esri.WorldTopoMap) %>%
+      addPolygons(
+        fillColor = "#74c476",
+        color = "#006d2c",
+        weight = 2,
+        opacity = 1,
+        fillOpacity = 0.6,
+        label = ~NAME,,
+        highlightOptions = highlightOptions(
+          color = "#ff7800",
+          weight = 3,
+          bringToFront = TRUE
+        )
+      ) %>%
+      setView(lng = -119.6982, lat = 34.4208, zoom = 10) 
+  })
+  
+  observe({
+    if (input$show_labels) {
+      labels <- st_centroid(santa_barbara_geo) %>%
+        st_coordinates() %>%
+        as.data.frame() %>%
+        mutate(label = santa_barbara_geo$NAME)
+      
+      leafletProxy("sb_map") %>% clearMarkers() %>%
+        addLabelOnlyMarkers(
+          lng = labels$X,
+          lat = labels$Y,
+          label = labels$label,
+          labelOptions = labelOptions(noHide = TRUE, direction = "top")
+        )
+    } else {
+      leafletProxy("sb_map") %>% clearMarkers()
+    }
+  })
   
   
   output$diceroll <- reactive({
